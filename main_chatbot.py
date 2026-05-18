@@ -165,7 +165,11 @@ elif data_source == "🗄️ SQLite / SQL":
             with open("temp.db", "wb") as f:
                 f.write(uploaded_db.read())
 
-            conn = sqlite3.connect("temp.db")
+            # Hapus database lama jika ada
+            if os.path.exists("temp_sql.db"):
+                os.remove("temp_sql.db")
+            
+            conn = sqlite3.connect("temp_sql.db")
 
             tables = pd.read_sql(
                 "SELECT name FROM sqlite_master WHERE type='table';",
