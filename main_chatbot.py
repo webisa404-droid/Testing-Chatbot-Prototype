@@ -6,10 +6,10 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
-import pymysql
-from sqlalchemy import create_engine
 import requests
 from datetime import datetime
+import tempfile
+import os
 
 # =========================================================
 # PAGE CONFIG
@@ -33,13 +33,12 @@ if "messages" not in st.session_state:
 
 if "first_load" not in st.session_state:
     st.session_state.first_load = True
-# 
+
 # =========================================================
-# API CONFIG (NO UI)
+# API CONFIG (SAFE WITH SECRETS)
 # =========================================================
 
-PRIMARY_API_KEY = "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"
-BACKUP_API_KEY = "ISI_API_KEY_CADANGAN"
+PRIMARY_API_KEY = st.secrets["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"]
 
 MODEL_NAME = "openai/gpt-oss-20b:free"
 
@@ -48,11 +47,6 @@ MODEL_NAME = "openai/gpt-oss-20b:free"
 # =========================================================
 
 def ask_llm(prompt):
-    
-    api_keys = st.secrets[
-        PRIMARY_API_KEY,
-        BACKUP_API_KEY
-    ]
 
     payload = {
         "model": MODEL_NAME,
@@ -72,32 +66,31 @@ def ask_llm(prompt):
         ]
     }
 
-    for api_key in api_keys:
+    try:
 
-        try:
+        headers = {
+            "Authorization": f"Bearer {PRIMARY_API_KEY}",
+            "Content-Type": "application/json"
+        }
 
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            }
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=60
+        )
 
-            response = requests.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=60
-            )
+        if response.status_code == 200:
 
-            if response.status_code == 200:
+            result = response.json()
 
-                result = response.json()
+            return result["choices"][0]["message"]["content"]
 
-                return result["choices"][0]["message"]["content"]
+        else:
+            return f"❌ API Error: {response.status_code}"
 
-        except:
-            continue
-
-    return "❌ Semua API gagal. Silakan coba lagi."
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
 
 # =========================================================
 # SIDEBAR - DATA INPUT
@@ -112,8 +105,7 @@ data_source = st.sidebar.selectbox(
     [
         "-- Tidak Ada --",
         "📂 Upload CSV",
-        "🗄️ SQLite",
-        "🐬 MySQL"
+        "🗄️ SQLite / SQL"
     ],
     key="data_source"
 )
@@ -140,98 +132,117 @@ if data_source == "📂 Upload CSV":
         st.sidebar.info(f"📊 Data: {df.shape[0]} baris, {df.shape[1]} kolom")
 
 # =========================================================
-# SQLITE UPLOAD
+# SQLITE / SQL UPLOAD
 # =========================================================
 
-elif data_source == "🗄️ SQLite":
+elif data_source == "🗄️ SQLite / SQL":
 
-    st.sidebar.subheader("🗄️ SQLite Database")
+    st.sidebar.subheader("🗄️ SQLite / SQL Database")
 
-    sqlite_file = st.sidebar.file_uploader(
-        "Pilih file SQLite",
-        type=["db", "sqlite", "sqlite3"]
+    uploaded_db = st.sidebar.file_uploader(
+        "Pilih file database",
+        type=["db", "sqlite", "sqlite3", "sql"]
     )
 
-    if sqlite_file:
+    if uploaded_db:
 
-        with open("temp.db", "wb") as f:
-            f.write(sqlite_file.read())
+        file_extension = uploaded_db.name.split(".")[-1].lower()
 
-        conn = sqlite3.connect("temp.db")
+        # =====================================================
+        # HANDLE SQLITE DATABASE
+        # =====================================================
 
-        tables = pd.read_sql(
-            "SELECT name FROM sqlite_master WHERE type='table';",
-            conn
-        )
+        if file_extension in ["db", "sqlite", "sqlite3"]:
 
-        table_list = tables["name"].tolist()
+            with open("temp.db", "wb") as f:
+                f.write(uploaded_db.read())
 
-        selected_table = st.sidebar.selectbox(
-            "Pilih Tabel",
-            table_list
-        )
+            conn = sqlite3.connect("temp.db")
 
-        if selected_table:
-
-            df = pd.read_sql(
-                f"SELECT * FROM {selected_table}",
+            tables = pd.read_sql(
+                "SELECT name FROM sqlite_master WHERE type='table';",
                 conn
             )
 
-            st.session_state.df = df
+            table_list = tables["name"].tolist()
 
-            st.sidebar.success("✅ Data berhasil dibaca!")
-            st.sidebar.info(f"📊 Data: {df.shape[0]} baris, {df.shape[1]} kolom")
+            if len(table_list) > 0:
 
-# =========================================================
-# MYSQL UPLOAD
-# =========================================================
-
-elif data_source == "🐬 MySQL":
-
-    st.sidebar.subheader("🐬 MySQL Database")
-
-    with st.sidebar.expander("⚙️ Konfigurasi Koneksi"):
-
-        host = st.text_input("Host", "localhost")
-        user = st.text_input("Username", "root")
-        password = st.text_input("Password", type="password")
-        database = st.text_input("Database")
-
-    if st.sidebar.button("🔗 Connect", key="mysql_connect"):
-
-        try:
-
-            engine = create_engine(
-                f"mysql+pymysql://{user}:{password}@{host}/{database}"
-            )
-
-            tables = pd.read_sql(
-                "SHOW TABLES",
-                engine
-            )
-
-            table_list = tables.iloc[:, 0].tolist()
-
-            selected_table = st.sidebar.selectbox(
-                "Pilih Tabel",
-                table_list
-            )
-
-            if selected_table:
-
-                df = pd.read_sql(
-                    f"SELECT * FROM {selected_table}",
-                    engine
+                selected_table = st.sidebar.selectbox(
+                    "Pilih Tabel",
+                    table_list
                 )
 
-                st.session_state.df = df
+                if selected_table:
 
-                st.sidebar.success("✅ Berhasil connect!")
-                st.sidebar.info(f"📊 Data: {df.shape[0]} baris, {df.shape[1]} kolom")
+                    df = pd.read_sql(
+                        f"SELECT * FROM {selected_table}",
+                        conn
+                    )
 
-        except Exception as e:
-            st.sidebar.error(f"❌ Error: {str(e)}")
+                    st.session_state.df = df
+
+                    st.sidebar.success("✅ Database berhasil dibaca!")
+                    st.sidebar.info(
+                        f"📊 Data: {df.shape[0]} baris, {df.shape[1]} kolom"
+                    )
+
+            else:
+                st.sidebar.warning("⚠️ Tidak ada tabel ditemukan.")
+
+        # =====================================================
+        # HANDLE SQL FILE
+        # =====================================================
+
+        elif file_extension == "sql":
+
+            try:
+
+                sql_content = uploaded_db.read().decode("utf-8")
+
+                conn = sqlite3.connect("temp_sql.db")
+
+                cursor = conn.cursor()
+
+                # Bersihkan syntax MySQL umum
+                sql_content = sql_content.replace("AUTO_INCREMENT", "AUTOINCREMENT")
+                sql_content = sql_content.replace("ENGINE=InnoDB", "")
+
+                conn.executescript(sql_content)
+
+                tables = pd.read_sql(
+                    "SELECT name FROM sqlite_master WHERE type='table';",
+                    conn
+                )
+
+                table_list = tables["name"].tolist()
+
+                if len(table_list) > 0:
+
+                    selected_table = st.sidebar.selectbox(
+                        "Pilih Tabel",
+                        table_list
+                    )
+
+                    if selected_table:
+
+                        df = pd.read_sql(
+                            f"SELECT * FROM {selected_table}",
+                            conn
+                        )
+
+                        st.session_state.df = df
+
+                        st.sidebar.success("✅ File SQL berhasil diimport!")
+                        st.sidebar.info(
+                            f"📊 Data: {df.shape[0]} baris, {df.shape[1]} kolom"
+                        )
+
+                else:
+                    st.sidebar.warning("⚠️ Tidak ada tabel ditemukan.")
+
+            except Exception as e:
+                st.sidebar.error(f"❌ SQL Error: {str(e)}")
 
 # =========================================================
 # DATA STATUS
@@ -240,9 +251,15 @@ elif data_source == "🐬 MySQL":
 st.sidebar.markdown("---")
 
 if st.session_state.df is not None:
+
     st.sidebar.success("✅ Data Aktif")
+
     with st.sidebar.expander("👀 Preview Data"):
-        st.dataframe(st.session_state.df.head(), use_container_width=True)
+        st.dataframe(
+            st.session_state.df.head(),
+            use_container_width=True
+        )
+
 else:
     st.sidebar.warning("⚠️ Belum Ada Data")
 
@@ -253,10 +270,11 @@ else:
 st.title("🤖 AI Chatbot Assistant")
 
 # =========================================================
-# GREETING MESSAGE (First Load)
+# GREETING MESSAGE
 # =========================================================
 
 if st.session_state.first_load:
+
     st.session_state.messages = [
         {
             "role": "assistant",
@@ -276,6 +294,7 @@ Saya siap membantu Anda dengan:
 Mulai percakapan sekarang! 😊"""
         }
     ]
+
     st.session_state.first_load = False
 
 # =========================================================
@@ -283,6 +302,7 @@ Mulai percakapan sekarang! 😊"""
 # =========================================================
 
 for message in st.session_state.messages:
+
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
@@ -290,7 +310,9 @@ for message in st.session_state.messages:
 # CHAT INPUT
 # =========================================================
 
-user_input = st.chat_input("Tanyakan sesuatu tentang data Anda...")
+user_input = st.chat_input(
+    "Tanyakan sesuatu tentang data Anda..."
+)
 
 if user_input:
 
@@ -306,13 +328,19 @@ if user_input:
     with st.chat_message("user"):
         st.markdown(user_input)
 
-    # Get AI response
+    # Assistant response
     with st.chat_message("assistant"):
+
         message_placeholder = st.empty()
 
-        # Build context from dataframe if available
+        # =====================================================
+        # BUILD DATA CONTEXT
+        # =====================================================
+
         if st.session_state.df is not None:
+
             df_preview = st.session_state.df.head(10).to_string()
+
             full_prompt = f"""
 DATASET PREVIEW:
 {df_preview}
@@ -322,22 +350,26 @@ PERTANYAAN USER:
 
 Silakan analisis data dan berikan jawaban yang jelas dan berguna.
 """
+
         else:
+
             full_prompt = f"""
 CATATAN: User belum upload data apapun.
 
 PERTANYAAN USER:
 {user_input}
 
-Berikan respon yang membantu. Jika pertanyaan terkait data, ingatkan user untuk upload data terlebih dahulu.
+Berikan respon yang membantu.
+Jika pertanyaan terkait data, ingatkan user untuk upload data terlebih dahulu.
 """
 
         with st.spinner("🤔 Berpikir..."):
+
             response = ask_llm(full_prompt)
 
         message_placeholder.markdown(response)
 
-    # Add assistant message to history
+    # Save assistant response
     st.session_state.messages.append(
         {
             "role": "assistant",
@@ -357,8 +389,12 @@ with col1:
     st.caption("🤖 AI Chatbot Assistant")
 
 with col2:
+
     if st.session_state.df is not None:
-        st.caption(f"📊 Data: {st.session_state.df.shape[0]} baris")
+        st.caption(
+            f"📊 Data: {st.session_state.df.shape[0]} baris"
+        )
+
     else:
         st.caption("⚠️ Belum ada data")
 
