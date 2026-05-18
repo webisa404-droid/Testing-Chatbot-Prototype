@@ -207,6 +207,38 @@ elif data_source == "🗄️ SQLite / SQL":
 
                 sql_content = uploaded_db.read().decode("utf-8")
 
+                # Bersihkan syntax MySQL umum
+                lines = sql_content.splitlines()
+
+                filtered_lines = []
+    
+                for line in lines:
+
+                    line = line.strip()
+
+                    # Skip syntax MySQL yang tidak didukung SQLite
+                    if line.startswith("SET "):
+                        continue
+
+                    if line.startswith("START TRANSACTION"):
+                        continue
+
+                    if line.startswith("COMMIT"):
+                        continue
+
+                    if "ENGINE=InnoDB" in line:
+                        line = line.replace("ENGINE=InnoDB", "")
+
+                    if "AUTO_INCREMENT" in line:
+                        line = line.replace("AUTO_INCREMENT", "AUTOINCREMENT")
+
+                    if "DEFAULT CHARSET" in line:
+                        continue
+
+                    filtered_lines.append(line)
+
+                sql_content = "\n".join(filtered_lines)
+                
                 conn = sqlite3.connect("temp_sql.db")
 
                 cursor = conn.cursor()
