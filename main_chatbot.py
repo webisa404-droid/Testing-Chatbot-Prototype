@@ -300,7 +300,8 @@ elif data_source == "🗄️ SQLite / SQL":
                 conn = sqlite3.connect("temp_sql.db")
 
                 conn.executescript(sql_content)
-
+                conn.commit()
+                
                 tables = pd.read_sql(
                     "SELECT name FROM sqlite_master WHERE type='table';",
                     conn
