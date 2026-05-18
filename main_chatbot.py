@@ -35,10 +35,11 @@ if "first_load" not in st.session_state:
     st.session_state.first_load = True
 
 # =========================================================
-# API CONFIG (SAFE WITH SECRETS)
+# API CONFIG (NO UI)
 # =========================================================
 
-PRIMARY_API_KEY = st.secrets["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"]
+PRIMARY_API_KEY = st.secrets["OPENROUTER_PRIMARY_API_KEY"]
+BACKUP_API_KEY = st.secrets["OPENROUTER_BACKUP_API_KEY"]
 
 MODEL_NAME = "openai/gpt-oss-20b:free"
 
@@ -47,6 +48,11 @@ MODEL_NAME = "openai/gpt-oss-20b:free"
 # =========================================================
 
 def ask_llm(prompt):
+
+    api_keys = [
+        PRIMARY_API_KEY,
+        BACKUP_API_KEY
+    ]
 
     payload = {
         "model": MODEL_NAME,
@@ -66,32 +72,33 @@ def ask_llm(prompt):
         ]
     }
 
-    try:
+    for api_key in api_keys:
 
-        headers = {
-            "Authorization": f"Bearer {PRIMARY_API_KEY}",
-            "Content-Type": "application/json"
-        }
+        try:
 
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=60
-        )
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
 
-        if response.status_code == 200:
+            response = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=60
+            )
 
-            result = response.json()
+            if response.status_code == 200:
 
-            return result["choices"][0]["message"]["content"]
+                result = response.json()
 
-        else:
-            return f"❌ API Error: {response.status_code}"
+                return result["choices"][0]["message"]["content"]
 
-    except Exception as e:
-        return f"❌ Error: {str(e)}"
+        except:
+            continue
 
+    return "❌ Semua API gagal. Silakan coba lagi."
+    
 # =========================================================
 # SIDEBAR - DATA INPUT
 # =========================================================
