@@ -10,6 +10,7 @@ import requests
 from datetime import datetime
 import tempfile
 import os
+import re
 
 # =========================================================
 # PAGE CONFIG
@@ -205,47 +206,86 @@ elif data_source == "🗄️ SQLite / SQL":
 
             try:
 
-                sql_content = uploaded_db.read().decode("utf-8")
+                sql_content = uploaded_db.read().decode("utf-8", errors="ignore")
+                sql_content = sql_content.replace("\r\n", "\n").replace("\r", "\n")
 
-                # Bersihkan syntax MySQL umum
-                lines = sql_content.splitlines()
-
-                filtered_lines = []
-    
-                for line in lines:
-
-                    line = line.strip()
-
-                    # Skip syntax MySQL yang tidak didukung SQLite
-                    if line.startswith("SET "):
-                        continue
-
-                    if line.startswith("START TRANSACTION"):
-                        continue
-
-                    if line.startswith("COMMIT"):
-                        continue
-
-                    if "ENGINE=InnoDB" in line:
-                        line = line.replace("ENGINE=InnoDB", "")
-
-                    if "AUTO_INCREMENT" in line:
-                        line = line.replace("AUTO_INCREMENT", "AUTOINCREMENT")
-
-                    if "DEFAULT CHARSET" in line:
-                        continue
-
-                    filtered_lines.append(line)
-
-                sql_content = "\n".join(filtered_lines)
-                
-                conn = sqlite3.connect("temp_sql.db")
-
-                cursor = conn.cursor()
-
-                # Bersihkan syntax MySQL umum
-                sql_content = sql_content.replace("AUTO_INCREMENT", "AUTOINCREMENT")
+                # =====================================================
+                # CLEAN MYSQL DUMP FOR SQLITE
+                # =====================================================
+                sql_content = re.sub(r"/\*![\s\S]*?\*/", "", sql_content)
+                sql_content = re.sub(r"AUTO_INCREMENT=\d+\s*", "", sql_content, flags=re.IGNORECASE)
                 sql_content = sql_content.replace("ENGINE=InnoDB", "")
+                sql_content = sql_content.replace("DEFAULT CHARSET=utf8mb4", "")
+                sql_content = sql_content.replace("DEFAULT CHARSET=utf8", "")
+                sql_content = sql_content.replace("COLLATE=utf8mb4_unicode_ci", "")
+                sql_content = sql_content.replace("COLLATE=utf8_unicode_ci", "")
+                sql_content = sql_content.replace("COLLATE utf8mb4_unicode_ci", "")
+                sql_content = sql_content.replace("COLLATE utf8_unicode_ci", "")
+                sql_content = sql_content.replace("`", "")
+                sql_content = sql_content.replace("UNSIGNED", "")
+                sql_content = sql_content.replace("unsigned", "")
+
+                cleaned_lines = []
+
+                for line in sql_content.split("\n"):
+                    stripped = line.strip()
+
+                    if not stripped:
+                        continue
+
+                    # Skip MySQL-specific statements
+                    if stripped.startswith("SET "):
+                        continue
+
+                    if stripped.startswith("START TRANSACTION"):
+                        continue
+
+                    if stripped.startswith("COMMIT"):
+                        continue
+
+                    if stripped.startswith("LOCK TABLES"):
+                        continue
+
+                    if stripped.startswith("UNLOCK TABLES"):
+                        continue
+
+                    if stripped.startswith("DELIMITER"):
+                        continue
+
+                    if stripped.startswith("--"):
+                        continue
+
+                    if stripped.startswith("/*"):
+                        continue
+
+                    # Skip MySQL index definitions that often break SQLite
+                    upper_line = stripped.upper()
+                    if upper_line.startswith("KEY "):
+                        continue
+                    if upper_line.startswith("UNIQUE KEY "):
+                        continue
+                    if upper_line.startswith("FULLTEXT KEY "):
+                        continue
+                    if upper_line.startswith("SPATIAL KEY "):
+                        continue
+                    if upper_line.startswith("CONSTRAINT "):
+                        continue
+
+                    # Remove trailing MySQL-only table options
+                    stripped = stripped.replace("ROW_FORMAT=DYNAMIC", "")
+                    stripped = stripped.replace("ROW_FORMAT=FIXED", "")
+                    stripped = stripped.replace("ROW_FORMAT=COMPRESSED", "")
+                    stripped = stripped.replace("ROW_FORMAT=DEFAULT", "")
+                    stripped = stripped.replace("CHARSET=utf8mb4", "")
+                    stripped = stripped.replace("CHARSET=utf8", "")
+                    stripped = stripped.replace("CHARACTER SET utf8mb4", "")
+                    stripped = stripped.replace("CHARACTER SET utf8", "")
+
+                    cleaned_lines.append(stripped)
+
+                sql_content = "\n".join(cleaned_lines)
+
+                conn = sqlite3.connect("temp_sql.db")
 
                 conn.executescript(sql_content)
 
@@ -282,7 +322,7 @@ elif data_source == "🗄️ SQLite / SQL":
 
             except Exception as e:
                 st.sidebar.error(f"❌ SQL Error: {str(e)}")
-
+                
 # =========================================================
 # DATA STATUS
 # =========================================================
