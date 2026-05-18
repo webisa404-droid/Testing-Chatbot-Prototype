@@ -38,7 +38,7 @@ if "first_load" not in st.session_state:
 # API CONFIG (NO UI)
 # =========================================================
 
-PRIMARY_API_KEY = st.secrets["OPENROUTER_PRIMARY_API_KEY"]
+PRIMARY_API_KEY = st.secrets["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"]
 BACKUP_API_KEY = st.secrets["OPENROUTER_BACKUP_API_KEY"]
 
 MODEL_NAME = "openai/gpt-oss-20b:free"
