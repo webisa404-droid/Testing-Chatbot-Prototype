@@ -49,7 +49,7 @@ MODEL_NAME = "openai/gpt-oss-20b:free"
 
 def ask_llm(prompt):
     
-    api_keys = [
+    api_keys = st.secrets[
         PRIMARY_API_KEY,
         BACKUP_API_KEY
     ]
