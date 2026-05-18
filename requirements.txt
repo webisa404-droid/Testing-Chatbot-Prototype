@@ -1,0 +1,11 @@
+streamlit
+pandas
+requests
+sqlalchemy
+pymysql
+psycopg2-binary
+openai
+pypdf
+python-docx
+openpyxl
+pillow
