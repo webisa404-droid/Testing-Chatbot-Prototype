@@ -212,79 +212,73 @@ elif data_source == "🗄️ SQLite / SQL":
                 # =====================================================
                 # CLEAN MYSQL DUMP FOR SQLITE
                 # =====================================================
+
                 sql_content = re.sub(r"/\*![\s\S]*?\*/", "", sql_content)
-                sql_content = re.sub(r"AUTO_INCREMENT=\d+\s*", "", sql_content, flags=re.IGNORECASE)
-                sql_content = sql_content.replace("ENGINE=InnoDB", "")
-                sql_content = sql_content.replace("DEFAULT CHARSET=utf8mb4", "")
-                sql_content = sql_content.replace("DEFAULT CHARSET=utf8", "")
-                sql_content = sql_content.replace("COLLATE=utf8mb4_unicode_ci", "")
-                sql_content = sql_content.replace("COLLATE=utf8_unicode_ci", "")
-                sql_content = sql_content.replace("COLLATE utf8mb4_unicode_ci", "")
-                sql_content = sql_content.replace("COLLATE utf8_unicode_ci", "")
+
+                # Remove MySQL engine and charset syntax
+                patterns_to_remove = [
+                    r"ENGINE=\w+",
+                    r"DEFAULT CHARSET=\w+",
+                    r"CHARSET=\w+",
+                    r"COLLATE\s*=\s*\w+",
+                    r"COLLATE\s+\w+",
+                    r"AUTO_INCREMENT=\d+",
+                    r"UNSIGNED",
+                    r"unsigned",
+                    r"COMMENT\s+'[^']*'",
+                    r"ROW_FORMAT=\w+"
+                ]        
+
+                for pattern in patterns_to_remove:
+                    sql_content = re.sub(
+                        pattern,
+                        "",
+                        sql_content,
+                        flags=re.IGNORECASE
+                    )
+
+                # Remove backticks
                 sql_content = sql_content.replace("`", "")
-                sql_content = sql_content.replace("UNSIGNED", "")
-                sql_content = sql_content.replace("unsigned", "")
 
                 cleaned_lines = []
 
                 for line in sql_content.split("\n"):
+
                     stripped = line.strip()
 
                     if not stripped:
                         continue
 
-                    # Skip MySQL-specific statements
-                    if stripped.startswith("SET "):
-                        continue
+                    # Skip unsupported MySQL syntax
+                    skip_keywords = [
+                        "SET ",
+                        "START TRANSACTION",
+                        "COMMIT",
+                        "LOCK TABLES",
+                        "UNLOCK TABLES",
+                        "DELIMITER",
+                        "--",
+                        "/*",
+                        "KEY ",
+                        "UNIQUE KEY",
+                        "FULLTEXT KEY",
+                        "SPATIAL KEY",
+                        "CONSTRAINT "
+                    ]
 
-                    if stripped.startswith("START TRANSACTION"):
-                        continue
+                    should_skip = False
 
-                    if stripped.startswith("COMMIT"):
-                        continue
+                    for keyword in skip_keywords:
+                        if stripped.upper().startswith(keyword):
+                            should_skip = True
+                            break
 
-                    if stripped.startswith("LOCK TABLES"):
+                    if should_skip:
                         continue
-
-                    if stripped.startswith("UNLOCK TABLES"):
-                        continue
-
-                    if stripped.startswith("DELIMITER"):
-                        continue
-
-                    if stripped.startswith("--"):
-                        continue
-
-                    if stripped.startswith("/*"):
-                        continue
-
-                    # Skip MySQL index definitions that often break SQLite
-                    upper_line = stripped.upper()
-                    if upper_line.startswith("KEY "):
-                        continue
-                    if upper_line.startswith("UNIQUE KEY "):
-                        continue
-                    if upper_line.startswith("FULLTEXT KEY "):
-                        continue
-                    if upper_line.startswith("SPATIAL KEY "):
-                        continue
-                    if upper_line.startswith("CONSTRAINT "):
-                        continue
-
-                    # Remove trailing MySQL-only table options
-                    stripped = stripped.replace("ROW_FORMAT=DYNAMIC", "")
-                    stripped = stripped.replace("ROW_FORMAT=FIXED", "")
-                    stripped = stripped.replace("ROW_FORMAT=COMPRESSED", "")
-                    stripped = stripped.replace("ROW_FORMAT=DEFAULT", "")
-                    stripped = stripped.replace("CHARSET=utf8mb4", "")
-                    stripped = stripped.replace("CHARSET=utf8", "")
-                    stripped = stripped.replace("CHARACTER SET utf8mb4", "")
-                    stripped = stripped.replace("CHARACTER SET utf8", "")
 
                     cleaned_lines.append(stripped)
 
                 sql_content = "\n".join(cleaned_lines)
-
                 conn = sqlite3.connect("temp_sql.db")
 
                 conn.executescript(sql_content)
