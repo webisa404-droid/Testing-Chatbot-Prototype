@@ -212,10 +212,10 @@ elif data_source == "🗄️ SQLite / SQL":
                 # =====================================================
                 # CLEAN MYSQL DUMP FOR SQLITE
                 # =====================================================
-
+                
                 sql_content = re.sub(r"/\*![\s\S]*?\*/", "", sql_content)
-
-                # Remove MySQL engine and charset syntax
+                
+                # Remove MySQL-specific syntax
                 patterns_to_remove = [
                     r"ENGINE=\w+",
                     r"DEFAULT CHARSET=\w+",
@@ -225,10 +225,9 @@ elif data_source == "🗄️ SQLite / SQL":
                     r"AUTO_INCREMENT=\d+",
                     r"UNSIGNED",
                     r"unsigned",
-                    r"COMMENT\s+'[^']*'",
                     r"ROW_FORMAT=\w+"
-                ]        
-
+                ]
+                
                 for pattern in patterns_to_remove:
                     sql_content = re.sub(
                         pattern,
@@ -236,20 +235,22 @@ elif data_source == "🗄️ SQLite / SQL":
                         sql_content,
                         flags=re.IGNORECASE
                     )
-
+                
                 # Remove backticks
                 sql_content = sql_content.replace("`", "")
-
+                
                 cleaned_lines = []
-
+                
                 for line in sql_content.split("\n"):
-
+                
                     stripped = line.strip()
-
+                
                     if not stripped:
                         continue
-
-                    # Skip unsupported MySQL syntax
+                
+                    upper = stripped.upper()
+                
+                    # Skip unsupported MySQL commands
                     skip_keywords = [
                         "SET ",
                         "START TRANSACTION",
@@ -258,27 +259,40 @@ elif data_source == "🗄️ SQLite / SQL":
                         "UNLOCK TABLES",
                         "DELIMITER",
                         "--",
-                        "/*",
-                        "KEY ",
-                        "UNIQUE KEY",
-                        "FULLTEXT KEY",
-                        "SPATIAL KEY",
-                        "CONSTRAINT "
+                        "/*"
                     ]
-
+                
                     should_skip = False
-
+                
                     for keyword in skip_keywords:
-                        if stripped.upper().startswith(keyword):
+                
+                        if upper.startswith(keyword):
                             should_skip = True
                             break
-
+                
                     if should_skip:
                         continue
-
+                
+                    # Remove KEY indexes but KEEP PRIMARY KEY
+                    if (
+                        upper.startswith("KEY ")
+                        or upper.startswith("UNIQUE KEY")
+                        or upper.startswith("FULLTEXT KEY")
+                        or upper.startswith("SPATIAL KEY")
+                    ):
+                
+                        # Remove trailing comma safely
+                        if stripped.endswith(","):
+                            continue
+                        else:
+                            continue
+                
                     cleaned_lines.append(stripped)
-
+                
                 sql_content = "\n".join(cleaned_lines)
+                
+                # Fix comma before PRIMARY KEY
+                sql_content = sql_content.replace(",\nPRIMARY KEY", "\nPRIMARY KEY")
                 conn = sqlite3.connect("temp_sql.db")
 
                 conn.executescript(sql_content)
